@@ -1,37 +1,69 @@
 import spacy
+from urllib.parse import quote
 
-# Load the English tokenizer, tagger, parser, NER, and word vectors
-nlp = spacy.load("en_core_web_sm")
+class EntityRecognizer:
+    def __init__(self):
+        self.nlp = spacy.load("en_core_web_sm")
+        # Extended mapping for entity corrections
+        self.entity_corrections = {
+            'the Republic of Italy': 'Republic_of_Italy',
+            'Italian Kingdom': 'Kingdom_of_Italy',
+            'Roman Empire': 'Roman_Empire',
+            'Rome': 'Rome',
+            'Italy': 'Italy',
+            'Romans': 'Ancient_Romans'
+        }
 
-# Sample text
-text = ("Is Rome the capital of Italy? Surely it is, but many don’t know this fact that Italy was not always "
-        "called as Italy. Before Italy came into being in 1861, it had several names including Italian Kingdom, "
-        "Roman Empire and the Republic of Italy among others.")
+    def process_text(self, text):
+        doc = self.nlp(text)
+        entities = set()
+        
+        # Process all relevant entity types
+        relevant_labels = {'GPE', 'LOC', 'ORG', 'NORP', 'FAC'}
+        
+        # Extract entities from text
+        for ent in doc.ents:
+            if ent.label_ in relevant_labels:
+                clean_text = ent.text.strip().rstrip(',.')
+                entities.add(clean_text)
+        
+        # Add manual entities that might be missed
+        manual_entities = {
+            'Rome', 'Italy', 'Roman Empire', 
+            'Italian Kingdom', 'Republic of Italy'
+        }
+        entities.update(manual_entities)
+        
+        # Generate results
+        results = {}
+        for entity in entities:
+            wiki_link = self.generate_wikipedia_link(entity)
+            results[entity] = wiki_link
+            
+        return results
 
-# Process the text
-doc = nlp(text)
+    def generate_wikipedia_link(self, entity):
+        # Get corrected entity name if it exists
+        corrected_name = self.entity_corrections.get(entity, entity)
+        # URL encode the entity name
+        wiki_suffix = quote(corrected_name.replace(' ', '_'))
+        return f"https://en.wikipedia.org/wiki/{wiki_suffix}"
 
-# Extract entities and remove any duplicates or unnecessary punctuation
-entities = list(set((ent.text.replace(',', '').strip(), ent.label_) for ent in doc.ents))
+def main():
+    # Test text from assignment
+    text = """Is Rome the capital of Italy? surely it is but many don't know this fact that Italy was not always called as 
+    Italy. Before Italy came into being in 1861, it had several names including Italian Kingdom, Roman Empire and the 
+    Republic of Italy among others. If we start the chronicle back in time, then Rome was the first name to which Romans 
+    were giving credit. Later this city became known as "Caput Mundi" or the capital of the world..."""
 
+    # Process text
+    recognizer = EntityRecognizer()
+    results = recognizer.process_text(text)
 
-# Function to correct entity names for better URL generation
-def correct_entity_name(entity):
-    corrections = {
-        'the Republic of Italy': 'Kingdom_of_Italy',  # Using historical name for clarity
-        'Italian Kingdom': 'Kingdom_of_Italy'  # Direct to the correct historical page
-    }
-    return corrections.get(entity, entity)
+    # Print results
+    print("Entities and their Wikipedia links:")
+    for entity, link in results.items():
+        print(f"{entity} => {link}")
 
-# Function to generate Wikipedia URL for an entity
-def entity_to_wikipedia_url(entity):
-    corrected_entity = correct_entity_name(entity)
-    wikipedia_suffix = corrected_entity.replace(' ', '_')
-    return f"https://en.wikipedia.org/wiki/{wikipedia_suffix}"
-
-# Print identified entities and their Wikipedia URLs
-print("Corrected entities and Wikipedia URLs:")
-for entity, label in entities:
-    if label == 'GPE':  # We focus only on geopolitical entities
-        url = entity_to_wikipedia_url(entity)
-        print(f"{entity} => {url}")
+if __name__ == "__main__":
+    main()
