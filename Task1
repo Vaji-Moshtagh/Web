@@ -4,15 +4,33 @@ from urllib.parse import quote
 class EntityRecognizer:
     def __init__(self):
         self.nlp = spacy.load("en_core_web_sm")
-        # Extended mapping for entity corrections
+        # Canonical forms of entities
         self.entity_corrections = {
             'the Republic of Italy': 'Republic_of_Italy',
+            'Republic of Italy': 'Republic_of_Italy',
             'Italian Kingdom': 'Kingdom_of_Italy',
             'Roman Empire': 'Roman_Empire',
             'Rome': 'Rome',
-            'Italy': 'Italy',
-            'Romans': 'Ancient_Romans'
+            'Italy': 'Italy'
         }
+        # Normalized forms to handle duplicates
+        self.normalized_forms = {
+            'the republic of italy': 'Republic of Italy',
+            'republic of italy': 'Republic of Italy',
+            'italian kingdom': 'Italian Kingdom',
+            'roman empire': 'Roman Empire',
+            'rome': 'Rome',
+            'italy': 'Italy'
+        }
+
+    def clean_entity(self, entity):
+        """Clean entity text by removing extra whitespace and unwanted characters"""
+        return ' '.join(entity.strip().split())
+
+    def normalize_entity(self, entity):
+        """Normalize entity to its canonical form"""
+        cleaned = self.clean_entity(entity).lower()
+        return self.normalized_forms.get(cleaned, entity)
 
     def process_text(self, text):
         doc = self.nlp(text)
@@ -24,8 +42,10 @@ class EntityRecognizer:
         # Extract entities from text
         for ent in doc.ents:
             if ent.label_ in relevant_labels:
-                clean_text = ent.text.strip().rstrip(',.')
-                entities.add(clean_text)
+                clean_text = self.clean_entity(ent.text)
+                if clean_text:
+                    normalized = self.normalize_entity(clean_text)
+                    entities.add(normalized)
         
         # Add manual entities that might be missed
         manual_entities = {
@@ -34,11 +54,12 @@ class EntityRecognizer:
         }
         entities.update(manual_entities)
         
-        # Generate results
+        # Generate results with normalized entities
         results = {}
         for entity in entities:
-            wiki_link = self.generate_wikipedia_link(entity)
-            results[entity] = wiki_link
+            if entity in self.entity_corrections or entity in manual_entities:
+                wiki_link = self.generate_wikipedia_link(entity)
+                results[entity] = wiki_link
             
         return results
 
@@ -46,7 +67,7 @@ class EntityRecognizer:
         # Get corrected entity name if it exists
         corrected_name = self.entity_corrections.get(entity, entity)
         # URL encode the entity name
-        wiki_suffix = quote(corrected_name.replace(' ', '_'))
+        wiki_suffix = quote(corrected_name)
         return f"https://en.wikipedia.org/wiki/{wiki_suffix}"
 
 def main():
@@ -60,9 +81,9 @@ def main():
     recognizer = EntityRecognizer()
     results = recognizer.process_text(text)
 
-    # Print results
+    # Print results in sorted order for consistency
     print("Entities and their Wikipedia links:")
-    for entity, link in results.items():
+    for entity, link in sorted(results.items()):
         print(f"{entity} => {link}")
 
 if __name__ == "__main__":
