@@ -1,0 +1,75 @@
+import unittest
+from answer_extractor import AnswerExtractor
+
+class TestAnswerExtractor(unittest.TestCase):
+    def setUp(self):
+        self.extractor = AnswerExtractor()
+
+    def test_yes_no_questions(self):
+        test_cases = [
+            {
+                'question': 'Is Rome the capital of Italy?',
+                'response': 'Yes, Rome is the capital of Italy.',
+                'expected': 'yes'
+            },
+            {
+                'question': 'Does a week have 8 days?',
+                'response': 'No, a week has 7 days.',
+                'expected': 'no'
+            },
+            {
+                'question': 'Is the Earth flat?',
+                'response': 'The Earth is not flat, it is spherical.',
+                'expected': 'no'
+            }
+        ]
+
+        for test in test_cases:
+            result = self.extractor.extract_answer(test['question'], test['response'])
+            self.assertEqual(result['type'], 'yes_no')
+            self.assertEqual(result['answer'], test['expected'])
+
+    def test_entity_questions(self):
+        test_cases = [
+            {
+                'question': 'Who wrote Hamlet?',
+                'response': 'William Shakespeare wrote Hamlet.',
+                'expected': 'William Shakespeare'
+            },
+            {
+                'question': 'What is the capital of Japan?',
+                'response': 'The capital of Japan is Tokyo.',
+                'expected': 'Tokyo'
+            },
+            {
+                'question': 'When did World War II end?',
+                'response': 'World War II ended in 1945.',
+                'expected': '1945'
+            }
+        ]
+
+        for test in test_cases:
+            result = self.extractor.extract_answer(test['question'], test['response'])
+            self.assertEqual(result['type'], 'entity')
+            self.assertEqual(result['answer'], test['expected'])
+
+    def test_edge_cases(self):
+        test_cases = [
+            {
+                'question': 'Tell me about Paris.',
+                'response': 'Paris is the capital of France.',
+                'expected_type': 'entity'
+            },
+            {
+                'question': 'Is it true that water boils at 100 degrees Celsius?',
+                'response': 'Water typically boils at 100 degrees Celsius at sea level.',
+                'expected_type': 'yes_no'
+            }
+        ]
+
+        for test in test_cases:
+            result = self.extractor.extract_answer(test['question'], test['response'])
+            self.assertEqual(result['type'], test['expected_type'])
+
+if __name__ == '__main__':
+    unittest.main()
