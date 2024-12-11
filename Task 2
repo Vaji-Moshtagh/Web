@@ -1,1 +1,174 @@
 
+
+import re
+import spacy
+from typing import Tuple, Optional
+
+class AnswerExtractor:
+    def __init__(self):
+        """Initialize the answer extractor with required models and patterns."""
+        self.nlp = spacy.load("en_core_web_sm")
+        
+        # Patterns for yes/no questions
+        self.yes_no_patterns = [
+            r'^(is|are|was|were|do|does|did|has|have|had|can|could|should|would|will)\s',
+            r'^(isn\'t|aren\'t|wasn\'t|weren\'t|don\'t|doesn\'t|didn\'t|hasn\'t|haven\'t|hadn\'t)\s'
+        ]
+        
+        # Patterns for entity questions
+        self.entity_patterns = [
+            r'^(who|what|where|when|which|whose|whom)\s',
+            r'.*\bis\s+(?:the|a|an)\s+.*\?$',
+            r'(?:name|identify|list|give|state)\s+(?:the|a|an)\s+'
+        ]
+        
+        # Keywords for yes/no answer detection
+        self.yes_keywords = ['yes', 'correct', 'true', 'right', 'indeed']
+        self.no_keywords = ['no', 'incorrect', 'false', 'wrong', 'not']
+
+    def determine_question_type(self, question: str) -> str:
+        """
+        Determine if the question expects a yes/no or entity answer.
+        Returns: 'yes_no' or 'entity'
+        """
+        question = question.lower().strip()
+        
+        # Check for yes/no question patterns
+        for pattern in self.yes_no_patterns:
+            if re.match(pattern, question):
+                return 'yes_no'
+        
+        # Check for entity question patterns
+        for pattern in self.entity_patterns:
+            if re.search(pattern, question):
+                return 'entity'
+        
+        # Default to entity if no clear pattern is found
+        return 'entity'
+
+    def extract_yes_no_answer(self, response: str) -> str:
+        """
+        Extract yes/no answer from the response.
+        Returns: 'yes' or 'no'
+        """
+        # Convert to lowercase and get first sentence
+        first_sentence = response.lower().split('.')[0]
+        
+        # Check for explicit yes/no indicators
+        for yes_word in self.yes_keywords:
+            if yes_word in first_sentence:
+                return 'yes'
+                
+        for no_word in self.no_keywords:
+            if no_word in first_sentence:
+                return 'no'
+        
+        # Analyze negation using spaCy
+        doc = self.nlp(first_sentence)
+        has_negation = any(token.dep_ == 'neg' for token in doc)
+        
+        # Return based on negation analysis
+        return 'no' if has_negation else 'yes'
+
+    def extract_entity_answer(self, response: str, question: str) -> Optional[str]:
+        """
+        Extract entity answer from the response.
+        Returns: Entity string or None if no entity found
+        """
+        doc = self.nlp(response)
+        
+        # First try to find named entities
+        entities = list(doc.ents)
+        if entities:
+            # Filter entities based on question type
+            question_doc = self.nlp(question.lower())
+            question_types = set()
+            
+            # Determine expected entity types from question
+            if 'who' in question.lower():
+                question_types = {'PERSON', 'ORG'}
+            elif 'where' in question.lower():
+                question_types = {'GPE', 'LOC', 'FAC'}
+            elif 'when' in question.lower():
+                question_types = {'DATE', 'TIME'}
+            
+            # If we have specific types, try to match them first
+            if question_types:
+                for ent in entities:
+                    if ent.label_ in question_types:
+                        return ent.text
+            
+            # If no specific match, return the first entity
+            return entities[0].text
+        
+        # If no named entities, look for noun chunks
+        noun_chunks = list(doc.noun_chunks)
+        if noun_chunks:
+            return noun_chunks[0].text
+        
+        # If still nothing found, return the first sentence
+        return response.split('.')[0].strip()
+
+    def process_answer(self, question: str, response: str) -> Tuple[str, str]:
+        """
+        Main method to process question and extract answer.
+        Returns: Tuple of (answer_type, answer)
+        """
+        question_type = self.determine_question_type(question)
+        
+        if question_type == 'yes_no':
+            answer = self.extract_yes_no_answer(response)
+            return ('yes_no', answer)
+        else:
+            answer = self.extract_entity_answer(response, question)
+            return ('entity', answer)
+
+    def clean_answer(self, answer: str) -> str:
+        """Clean and format the extracted answer."""
+        # Remove extra whitespace
+        answer = ' '.join(answer.split())
+        # Remove quotes if present
+        answer = answer.strip('"\'')
+        # Remove punctuation at the end
+        answer = re.sub(r'[,.!?]+$', '', answer)
+        return answer
+
+    def extract_answer(self, question: str, llm_response: str) -> dict:
+        """
+        Main entry point for answer extraction.
+        Returns a dictionary with answer details.
+        """
+        answer_type, raw_answer = self.process_answer(question, llm_response)
+        clean_answer = self.clean_answer(raw_answer)
+        
+        return {
+            'type': answer_type,
+            'answer': clean_answer,
+            'raw_response': llm_response
+        }
+
+# Example usage
+if __name__ == "__main__":
+    extractor = AnswerExtractor()
+    
+    # Test cases
+    test_cases = [
+        {
+            'question': 'Is Paris the capital of France?',
+            'response': 'Yes, Paris is indeed the capital of France.'
+        },
+        {
+            'question': 'What is the capital of France?',
+            'response': 'The capital of France is Paris.'
+        },
+        {
+            'question': 'Who wrote Romeo and Juliet?',
+            'response': 'William Shakespeare wrote Romeo and Juliet.'
+        }
+    ]
+    
+    for test in test_cases:
+        result = extractor.extract_answer(test['question'], test['response'])
+        print(f"\nQuestion: {test['question']}")
+        print(f"Type: {result['type']}")
+        print(f"Answer: {result['answer']}")
